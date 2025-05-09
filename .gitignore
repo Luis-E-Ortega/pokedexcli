@@ -1,0 +1,6 @@
+# Ignore the executable
+pokedexcli
+pokedexcli.exe
+
+# Ignore the log file
+repl.log
