@@ -13,7 +13,7 @@ import (
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(*config) error
+	callback    func(*config, string) error
 }
 
 type config struct {
@@ -29,6 +29,15 @@ type locationAreaResponse struct {
 }
 
 type locationAreaInfo struct {
+	Name              string             `json:"name"`
+	PokemonEncounters []PokemonEncounter `json:"pokemon_encounters"`
+}
+
+type PokemonEncounter struct {
+	Pokemon Pokemon `json:"pokemon"`
+}
+
+type Pokemon struct {
 	Name string `json:"name"`
 }
 
@@ -55,16 +64,21 @@ func getCommands() map[string]cliCommand {
 			description: "Displays the previous 20 locations",
 			callback:    commandMapb,
 		},
+		"explore": {
+			name:        "explore",
+			description: "See the list of all pokemon at a given location",
+			callback:    commandExplore,
+		},
 	}
 }
 
-func commandExit(cfg *config) error {
+func commandExit(cfg *config, name string) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(cfg *config) error {
+func commandHelp(cfg *config, name string) error {
 	fmt.Println("Welcome to the Pokedex!")
 	fmt.Print("Usage:\n\n")
 	// Just a note for memory efficiency, storing the map in memory on each command call isn't as good
@@ -75,7 +89,7 @@ func commandHelp(cfg *config) error {
 	return nil
 }
 
-func commandMap(cfg *config) error {
+func commandMap(cfg *config, name string) error {
 	url := "https://pokeapi.co/api/v2/location-area"
 	var body []byte
 	var err error
@@ -126,7 +140,7 @@ func commandMap(cfg *config) error {
 	return nil
 }
 
-func commandMapb(cfg *config) error {
+func commandMapb(cfg *config, name string) error {
 	if cfg.Prev != nil {
 		url := *cfg.Prev
 		var body []byte
@@ -171,6 +185,58 @@ func commandMapb(cfg *config) error {
 		cfg.Prev = locations.Prev
 	} else {
 		fmt.Println("you're on the first page")
+	}
+
+	return nil
+}
+
+func commandExplore(cfg *config, name string) error {
+	url := "https://pokeapi.co/api/v2/location-area/" + name + "/"
+
+	var body []byte
+	var err error
+
+	// Check if response is in cache
+	if cacheData, found := cfg.cache.Get(url); found {
+		fmt.Println("Cache found!")
+		body = cacheData
+	} else {
+		// Making the get request to pull API location data
+		res, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+
+		// Read the body of the data
+		body, err = io.ReadAll(res.Body)
+		res.Body.Close()
+
+		if err != nil {
+			return err
+		}
+
+		if res.StatusCode > 299 {
+			return fmt.Errorf("response failed with status code: %d and body: %s", res.StatusCode, body)
+		}
+
+		// Add to cache
+		cfg.cache.Add(url, body)
+	}
+
+	location := locationAreaInfo{}
+	err = json.Unmarshal(body, &location)
+	if err != nil {
+		return err
+	}
+
+	if name != "" {
+		// To print the list of pokemon from location
+		fmt.Printf("Exploring %s...\n", name)
+		fmt.Printf("Found Pokemon:\n")
+	}
+
+	for _, area := range location.PokemonEncounters {
+		fmt.Printf("- %s\n", area.Pokemon.Name)
 	}
 
 	return nil

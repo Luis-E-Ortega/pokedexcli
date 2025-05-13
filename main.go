@@ -27,24 +27,24 @@ func main() {
 		words := cleanInput(input) // Split input into words
 
 		// Check if there is at least one word
-		if len(words) > 0 {
-			firstWord := words[0] // Capture first word
-			// Check if command exists in registry
-			if command, exists := commands[firstWord]; exists {
-				// Call its callback
-				err := command.callback(cfg)
-				if err != nil {
-					fmt.Println("Error:", err)
-				}
-			} else {
-				// Command not found
-				fmt.Println("Unknown command")
-			}
-		} else {
-			// Empty Input
+		if len(words) == 0 {
 			continue
 		}
-
+		firstWord := words[0] // Capture the first word
+		arg := ""
+		// If there are multiple words then user is probably passing arguments
+		if len(words) > 1 {
+			arg = words[1]
+		}
+		// Check if command exists in registry
+		if command, exists := commands[firstWord]; exists {
+			err := command.callback(cfg, arg) // Callback passing the argument
+			if err != nil {
+				fmt.Println("Error:", err)
+			}
+		} else {
+			fmt.Println("Unknown command")
+		}
 	}
 }
 
