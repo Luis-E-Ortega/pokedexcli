@@ -15,7 +15,8 @@ func main() {
 	commands := getCommands()             // Get the commands map once at the start
 	// Create an instance of the config struct and initialize cache
 	cfg := &config{
-		cache: pokecache.NewCache(5 * time.Minute),
+		cache:         pokecache.NewCache(5 * time.Minute),
+		caughtPokemon: make(map[string]Pokemon),
 	}
 
 	// Infinite loop while program is running to register user input

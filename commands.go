@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/Luis-E-Ortega/pokedexcli/internal/pokecache"
 )
@@ -17,9 +19,10 @@ type cliCommand struct {
 }
 
 type config struct {
-	Next  *string
-	Prev  *string
-	cache *pokecache.Cache
+	Next          *string
+	Prev          *string
+	cache         *pokecache.Cache
+	caughtPokemon map[string]Pokemon
 }
 
 type locationAreaResponse struct {
@@ -38,7 +41,28 @@ type PokemonEncounter struct {
 }
 
 type Pokemon struct {
+	Name           string        `json:"name"`
+	BaseExperience int           `json:"base_experience"`
+	Height         int           `json:"height"`
+	Weight         int           `json:"weight"`
+	Stats          []PokemonStat `json:"stats"`
+	Types          []PokemonType `json:"types"`
+}
+
+type PokemonStat struct {
+	BaseStat int              `json:"base_stat"`
+	Effort   int              `json:"effort"`
+	Stat     NamedAPIResource `json:"stat"`
+}
+
+type NamedAPIResource struct {
 	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+type PokemonType struct {
+	Slot int              `json:"slot"`
+	Type NamedAPIResource `json:"type"`
 }
 
 // Function that returns the map of commands
@@ -68,6 +92,16 @@ func getCommands() map[string]cliCommand {
 			name:        "explore",
 			description: "See the list of all pokemon at a given location",
 			callback:    commandExplore,
+		},
+		"catch": {
+			name:        "catch",
+			description: "Adds pokemon to Pokedex",
+			callback:    commandCatch,
+		},
+		"inspect": {
+			name:        "inspect",
+			description: "Inspect details about caught pokemon in pokedex",
+			callback:    commandInspect,
 		},
 	}
 }
@@ -239,5 +273,107 @@ func commandExplore(cfg *config, name string) error {
 		fmt.Printf("- %s\n", area.Pokemon.Name)
 	}
 
+	return nil
+}
+
+func commandCatch(cfg *config, name string) error {
+	if name == "" {
+		return fmt.Errorf("requires a valid pokemon name")
+	}
+	// To format the url and name correctly
+	lowerName := strings.ToLower(name)
+	url := "https://pokeapi.co/api/v2/pokemon/" + lowerName + "/"
+
+	var body []byte
+	var err error
+
+	// If the data is already found in cache
+	if cachedData, found := cfg.cache.Get(url); found {
+		body = cachedData
+	} else {
+		// Making the get request to pull API pokemon data
+		res, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+
+		// Ready the body of the data
+		body, err = io.ReadAll(res.Body)
+		res.Body.Close()
+
+		if err != nil {
+			return err
+		}
+		if res.StatusCode == 404 {
+			return fmt.Errorf("Pokemon '%s' not found", lowerName)
+		} else if res.StatusCode > 299 {
+			return fmt.Errorf("response failed with status code: %d and body: %s", res.StatusCode, body)
+		}
+
+		// Add to cache
+		cfg.cache.Add(url, body)
+	}
+
+	var pokemon Pokemon
+	err = json.Unmarshal(body, &pokemon)
+	if err != nil {
+		return err
+	}
+
+	randInt := rand.Intn(100)
+	caught := false
+
+	fmt.Printf("Throwing a Pokeball at %s...\n", lowerName)
+	if pokemon.BaseExperience < 40 {
+		if randInt <= 75 {
+			caught = true
+		}
+	} else if pokemon.BaseExperience <= 150 {
+		if randInt <= 35 {
+			caught = true
+		}
+	} else if pokemon.BaseExperience <= 300 {
+		if randInt <= 20 {
+			caught = true
+		}
+	} else {
+		if randInt <= 10 {
+			caught = true
+		}
+	}
+
+	if caught {
+		fmt.Printf("%s was caught!\n", lowerName)
+		cfg.caughtPokemon[lowerName] = pokemon
+	} else {
+		fmt.Printf("%s escaped!\n", lowerName)
+	}
+
+	return nil
+}
+
+func commandInspect(cfg *config, name string) error {
+	lowerName := strings.ToLower(name)
+
+	if name == "" {
+		return fmt.Errorf("you must provide a pokemon name")
+	}
+
+	if pokeData, ok := cfg.caughtPokemon[lowerName]; ok {
+		// Print simple output together with newlines
+		fmt.Printf("Name: %s\nHeight: %d\nWeight: %d\nStats:\n", pokeData.Name, pokeData.Height, pokeData.Weight)
+		// Loop through stats
+		for _, stat := range pokeData.Stats {
+			fmt.Printf("  -%s: %d\n", stat.Stat.Name, stat.BaseStat)
+		}
+
+		fmt.Println("Types:")
+		// Loop through types
+		for _, t := range pokeData.Types {
+			fmt.Printf("  - %s\n", t.Type.Name)
+		}
+	} else {
+		fmt.Println("you have not caught that pokemon")
+	}
 	return nil
 }
